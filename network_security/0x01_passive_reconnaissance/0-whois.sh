@@ -1,2 +1,2 @@
-#!/usr/bin/env bash
+#!/bin/bash
 whois "$1" | awk '/^(Registrant|Admin|Tech)/{s=$1} / Name:/{sub(/.*: /,"");print s" Name, "$0} / Organization:/{sub(/.*: /,"");print s" Organization, "$0} / Street:/{sub(/.*: /,"");print s" Street, "$0" "} / City:/{sub(/.*: /,"");print s" City, "$0} / State\/Province:/{sub(/.*: /,"");print s" State/Province, "$0} / Postal Code:/{sub(/.*: /,"");print s" Postal Code, "$0} / Country:/{sub(/.*: /,"");print s" Country, "$0} / Phone:/{sub(/.*: /,"");print s" Phone, "$0 ORS s" Phone Ext:, "} / Fax:/{sub(/.*: /,"");print s" Fax, " ORS s" Fax Ext:, "} / Email:/{sub(/.*: /,"");print s" Email, "$0}' > "$1.csv"
