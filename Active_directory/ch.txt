@@ -105,3 +105,63 @@ whoami /priv
 *Əgər nəticədə `SeImpersonatePrivilege`, `SeBackupPrivilege` və ya `SeTakeOwnershipPrivilege` görsəniz, bu imtiyazlardan istifadə edərək sistemi asanlıqla `SYSTEM` hüququna qaldıra bilərsiniz (məsələn, `SeImpersonate` üçün `PrintSpoofer` və ya `GodPotato` alətləri istifadə olunur).*
 * **Avtomatlaşdırılmış skriptlər işlətmək:**
 Sistemə daxil olduqdan sonra `WinPEAS.exe` skriptini hədəf maşına yükləyib işlədərək, sistemdəki zəif konfiqurasiyaları (məsələn, unquoted service paths, unencrypted passwords) avtomatik aşkar edə bilərsiniz.
+
+
+
+
+
+
+Bəli, `impacket-GetUserSPNs` və ya `impacket-GetNPUsers` əmrləri ilə əldə etdiyiniz Kerberos hash-lərini `hashcat` istifadə etmədən, digər ən populyar alət olan **John the Ripper (`john`)** ilə çox rahat şəkildə sındıra bilərsiniz.
+
+`john` alətinin ən böyük üstünlüklərindən biri odur ki, o, hash-in növünü çox vaxt avtomatik tanıyır və xüsusi rejim kodu (məsələn, hashcat-dəki `-m 13100` kimi) yazmağınızı tələb etmir.
+
+Kerberos hash-lərini `john` ilə sındırmaq üçün aşağıdakı addımları izləyə bilərsiniz:
+
+### 1. Kerberoasting (TGS-REP) Hash-lərini Sındırmaq
+
+Əgər `impacket-GetUserSPNs` ilə əldə etdiyiniz və daxilində `$krb5tgs$` sözü keçən hash-ləri sındırmaq istəyirsinizsə, Kali Linux-da standart olaraq gələn `RockYou` söz siyahısından (wordlist) istifadə edərək bu əmri yazın:
+
+```bash
+john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+
+```
+
+*Əgər `john` hash növünü avtomatik tanımaqda çətinlik çəksə, formatı əllə məcburi təyin edə bilərsiniz:*
+
+```bash
+john --format=krb5tgs --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+
+```
+
+---
+
+### 2. AS-REP Roasting Hash-lərini Sındırmaq
+
+Əgər `impacket-GetNPUsers` ilə əldə etdiyiniz və daxilində `$krb5asrep$` sözü olan (şifrə tələb etməyən istifadəçilərin) hash-lərini sındırmaq istəyirsinizsə:
+
+```bash
+john --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+
+```
+
+*Formatı əllə təyin etmək ehtiyacı yaranarsa:*
+
+```bash
+john --format=krb5asrep --wordlist=/usr/share/wordlists/rockyou.txt hashes.txt
+
+```
+
+---
+
+### 3. Tapılmış Şifrəyə Baxmaq (Show)
+
+Əgər `john` arxa fonda işini bitiribsə və ya şifrə artıq tapılıbsa, lakin siz terminalda onu qaçırmısınızsa, tapılan şifrəni ekranda göstərmək üçün `--show` parametrindən istifadə edin:
+
+```bash
+john --show hashes.txt
+
+```
+
+### Alternativ Olaraq: Şifrəni Onlayn Sındırmaq (Əgər internet varsa)
+
+Əgər imtahan mühitindən xarici internetə çıxışınız varsa və ya hash-i öz kompüterinizə köçürə bilirsinizsə, **CrackStation** kimi onlayn bazalardan istifadə edə bilərsiniz. Lakin yadda saxlayın ki, onlayn xidmətlər adətən sadə NTLM və ya MD5 hash-lərini yaxşı tapır, Kerberos biletlərinin strukturunu hər sayt dəstəkləməyə bilər. Buna görə imtahanda ən etibarlı yol lokal olaraq `john` və ya `hashcat` işlətməkdir.
